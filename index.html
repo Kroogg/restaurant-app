@@ -222,26 +222,28 @@ body{font-family:var(--font);background:var(--bg);color:var(--tx);font-size:15px
       <button class="btn bp" id="bt-compra" onclick="setTipus('compra')" style="flex:1;font-size:13px;padding:10px">📥 Factura compra</button>
       <button class="btn bs" id="bt-venda" onclick="setTipus('venda')" style="flex:1;font-size:13px;padding:10px;opacity:.5">📤 Tiquet venda</button>
     </div>
-    <div class="uz" id="uz" onclick="document.getElementById('fi').click()">
+    <div class="uz" id="uz" onclick="obrirFitxer()">
       <div style="font-size:40px;margin-bottom:10px">📷</div>
-      <div style="font-size:15px;font-weight:600;margin-bottom:4px">Fes una foto o puja la imatge</div>
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px">Fes una foto o puja un fitxer</div>
       <div style="font-size:13px;color:var(--tx2)">La IA llegirà la factura automàticament</div>
       <div style="display:flex;gap:6px;justify-content:center;margin-top:14px;flex-wrap:wrap">
         <span class="tag tac">📄 Paper</span>
         <span class="tag tb">🖨 TPV</span>
         <span class="tag tg">📱 Foto</span>
+        <span class="tag tr">📋 PDF</span>
       </div>
     </div>
-    <input type="file" id="fi" accept="image/*" capture="environment" style="display:none">
+    <input type="file" id="fi" accept="image/*,application/pdf" style="display:none">
     <div class="brow" id="scan-btns">
-      <button class="btn bp" style="flex:1" onclick="document.getElementById('fi').click()">
+      <button class="btn bp" style="flex:1" onclick="obrirCamera()">
         <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>Càmera
       </button>
-      <button class="btn bg" style="flex:1" onclick="document.getElementById('fi').click()">
-        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Galeria
+      <button class="btn bg" style="flex:1" onclick="obrirFitxer()">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Fitxer / PDF
       </button>
     </div>
   </div>
+  <input type="file" id="fi-camera" accept="image/*" capture="environment" style="display:none">
   <div id="ai-box" style="display:none">
     <div class="aibox">
       <div class="spin"></div>
@@ -509,7 +511,17 @@ function setTipus(t){
   }
 }
 
+function obrirCamera(){
+  document.getElementById('fi-camera').click();
+}
+function obrirFitxer(){
+  document.getElementById('fi').click();
+}
+
 document.getElementById('fi').addEventListener('change',function(){
+  if(this.files&&this.files[0]){processarFitxer(this.files[0]);this.value=''}
+});
+document.getElementById('fi-camera').addEventListener('change',function(){
   if(this.files&&this.files[0]){processarFitxer(this.files[0]);this.value=''}
 });
 
@@ -531,9 +543,9 @@ async function processarFitxer(fitxer){
   document.getElementById('ai-box').style.display='block';
   document.getElementById('resultat').style.display='none';
 
-  const pasos=['Llegint la imatge…','Enviant a Google Gemini…','Analitzant text i productes…','Organitzant la informació…'];
+  const pasos=['Llegint el fitxer…','Enviant a Google Gemini…','Analitzant text i productes…','Organitzant la informació…'];
   let pi=0;
-  const interval=setInterval(()=>{if(pi<pasos.length)document.getElementById('ai-pas').textContent=pasos[pi++]},600);
+  const interval=setInterval(()=>{if(pi<pasos.length)document.getElementById('ai-pas').textContent=pasos[pi++]},700);
 
   try{
     // Llegir fitxer com base64
@@ -543,23 +555,38 @@ async function processarFitxer(fitxer){
       r.onerror=rej;
       r.readAsDataURL(fitxer);
     });
-    const mime=fitxer.type||'image/jpeg';
 
-    const promptCompra=`Analitza aquesta factura de proveïdor. Retorna NOMÉS un JSON mínim i compacte, sense text addicional ni markdown. Usa noms curts. Màxim 5 productes:
+    // Determinar mime type correcte
+    let mime=fitxer.type||'image/jpeg';
+    // Gemini accepta: image/jpeg, image/png, image/webp, image/heic, image/heif, application/pdf
+    if(mime==='image/heic'||mime==='image/heif')mime='image/jpeg'; // iOS HEIC → tractar com jpeg
+    if(!['image/jpeg','image/png','image/webp','image/heic','image/heif','application/pdf'].includes(mime)){
+      mime='image/jpeg'; // fallback segur
+    }
+
+    const esPDF=mime==='application/pdf';
+
+    const promptCompra=`Analitza aquesta factura de proveïdor${esPDF?' (PDF)':''}. Retorna NOMÉS un JSON mínim i compacte, sense text addicional ni markdown. Màxim 8 productes:
 {"tipus":"compra","proveidorNom":"","dataFactura":"DD/MM/YYYY","numeroFactura":null,"baseImposable":0.00,"iva":0.00,"total":0.00,"productes":[{"nom":"","categoria":"Carnisseria","quantitat":0,"unitat":"kg","preuUnitari":0.00,"total":0.00}]}
-Regles: camps desconeguts=null, preus=decimal sense símbols, categories vàlides: Carnisseria/Peix i marisc/Fruites i verdures/Begudes/Làctics i ous/Pa i pastisseria/Altres`;
+Categories vàlides: Carnisseria/Peix i marisc/Fruites i verdures/Begudes/Làctics i ous/Pa i pastisseria/Altres. Camps desconeguts=null, preus=decimal.`;
 
-    const promptVenda=`Analitza aquest tiquet TPV. Retorna NOMÉS aquest JSON sense text addicional ni markdown:
+    const promptVenda=`Analitza aquest tiquet TPV${esPDF?' (PDF)':''}. Retorna NOMÉS aquest JSON sense text addicional ni markdown:
 {"tipus":"venda","data":"DD/MM/YYYY","totalVendes":0.00,"totalEfectiu":0.00,"totalTarja":0.00,"numTickets":0}
-Camps desconeguts=null, preus=decimal sense símbols.`;
+Camps desconeguts=null, preus=decimal.`;
 
     const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+
+    // Construir la part del fitxer segons el tipus
+    const partFitxer = esPDF
+      ? {inline_data:{mime_type:'application/pdf',data:base64}}
+      : {inline_data:{mime_type:mime,data:base64}};
+
     const resp=await fetch(url,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         contents:[{parts:[
-          {inline_data:{mime_type:mime,data:base64}},
+          partFitxer,
           {text:tipusDoc==='compra'?promptCompra:promptVenda}
         ]}],
         generationConfig:{temperature:0.0,maxOutputTokens:2000}
@@ -572,29 +599,26 @@ Camps desconeguts=null, preus=decimal sense símbols.`;
       const err=await resp.json().catch(()=>({}));
       if(resp.status===400||resp.status===403)throw new Error('KEY_ERROR');
       if(resp.status===429)throw new Error('LIMIT_ERROR');
-      throw new Error('API_ERROR');
+      throw new Error('API_ERROR '+(err.error?.message||resp.status));
     }
 
     const data=await resp.json();
     let txt=(data.candidates?.[0]?.content?.parts?.[0]?.text||'');
-    // Netejar markdown i espais
     txt=txt.replace(/```json|```/g,'').trim();
-    // Extreure el primer objecte JSON vàlid
     const inici=txt.indexOf('{');
     const fi=txt.lastIndexOf('}');
     if(inici===-1||fi===-1)throw new Error('EMPTY');
     txt=txt.substring(inici,fi+1);
-    // Intentar parsejar, si falla intentar reparar JSON truncat
+
     let parsed;
     try{
       parsed=JSON.parse(txt);
     }catch(e){
-      // Intentar reparar tancant arrays/objectes oberts
+      // Reparar JSON truncat
       let reparat=txt;
+      reparat=reparat.replace(/,\s*\{[^}]*$/,'');
       const obA=(reparat.match(/\[/g)||[]).length-(reparat.match(/\]/g)||[]).length;
       const obO=(reparat.match(/\{/g)||[]).length-(reparat.match(/\}/g)||[]).length;
-      // Eliminar últim element incomplet (pot estar tallat)
-      reparat=reparat.replace(/,\s*\{[^}]*$/,'');
       for(let i=0;i<obA;i++)reparat+=']';
       for(let i=0;i<obO;i++)reparat+='}';
       parsed=JSON.parse(reparat);
@@ -610,11 +634,12 @@ Camps desconeguts=null, preus=decimal sense símbols.`;
     document.getElementById('uz').style.display='block';
     document.getElementById('scan-btns').style.display='flex';
     const msgs={
-      KEY_ERROR:'La clau API no és vàlida. Comprova-la a Configuració.',
+      KEY_ERROR:'La clau API no és vàlida. Ves a Configuració i comprova-la.',
       LIMIT_ERROR:'Límit diari assolit. Torna a provar demà (és gratuït).',
-      EMPTY:'La IA no ha pogut llegir res. Prova amb foto més clara i il·luminada.',
+      EMPTY:'La IA no ha retornat dades. Prova amb una foto o fitxer més clar.',
     };
-    mostrarErr(msgs[err.message]||('Error: '+err.message+'. Prova de nou.'));
+    const m=Object.keys(msgs).find(k=>err.message.startsWith(k));
+    mostrarErr(msgs[m]||('Error: '+err.message));
   }
 }
 
