@@ -532,64 +532,97 @@ function mostrarErr(msg){
   e.style.display='flex';
 }
 
+// Normalitzar imatge: redimensionar, corregir rotació EXIF, convertir a JPEG
+async function normalitzarImatge(fitxer){
+  return new Promise((res,rej)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        // Màxim 1600px per al costat llarg (suficient per Gemini, menys pes)
+        const MAX=1600;
+        let w=img.width,h=img.height;
+        if(w>MAX||h>MAX){
+          if(w>h){h=Math.round(h*(MAX/w));w=MAX}
+          else{w=Math.round(w*(MAX/h));h=MAX}
+        }
+        const c=document.createElement('canvas');
+        c.width=w;c.height=h;
+        const ctx=c.getContext('2d');
+        ctx.fillStyle='#fff';
+        ctx.fillRect(0,0,w,h);
+        ctx.drawImage(img,0,0,w,h);
+        // Sempre exportem JPEG net
+        const dataUrl=c.toDataURL('image/jpeg',0.88);
+        res({base64:dataUrl.split(',')[1],mime:'image/jpeg'});
+      };
+      img.onerror=rej;
+      img.src=e.target.result;
+    };
+    reader.onerror=rej;
+    reader.readAsDataURL(fitxer);
+  });
+}
+
 async function processarFitxer(fitxer){
   const key=llegirKey();
   if(!key){mostrarErr('Configura primer la clau API de Google a Configuració. És gratuïta!');return}
 
-  // Amagar zona upload, mostrar spinner
   document.getElementById('uz').style.display='none';
   document.getElementById('scan-btns').style.display='none';
   const se=document.getElementById('scan-err');if(se)se.style.display='none';
   document.getElementById('ai-box').style.display='block';
   document.getElementById('resultat').style.display='none';
 
-  const pasos=['Llegint el fitxer…','Enviant a Google Gemini…','Analitzant text i productes…','Organitzant la informació…'];
+  const pasos=['Preparant el fitxer…','Enviant a Google Gemini…','Analitzant text i productes…','Organitzant la informació…'];
   let pi=0;
   const interval=setInterval(()=>{if(pi<pasos.length)document.getElementById('ai-pas').textContent=pasos[pi++]},700);
 
   try{
-    // Llegir fitxer com base64
-    const base64=await new Promise((res,rej)=>{
-      const r=new FileReader();
-      r.onload=e=>res(e.target.result.split(',')[1]);
-      r.onerror=rej;
-      r.readAsDataURL(fitxer);
-    });
+    let base64,mime;
+    const esPDF=fitxer.type==='application/pdf';
 
-    // Determinar mime type correcte
-    let mime=fitxer.type||'image/jpeg';
-    // Gemini accepta: image/jpeg, image/png, image/webp, image/heic, image/heif, application/pdf
-    if(mime==='image/heic'||mime==='image/heif')mime='image/jpeg'; // iOS HEIC → tractar com jpeg
-    if(!['image/jpeg','image/png','image/webp','image/heic','image/heif','application/pdf'].includes(mime)){
-      mime='image/jpeg'; // fallback segur
+    if(esPDF){
+      // PDF: enviar directament sense processar
+      base64=await new Promise((res,rej)=>{
+        const r=new FileReader();
+        r.onload=e=>res(e.target.result.split(',')[1]);
+        r.onerror=rej;
+        r.readAsDataURL(fitxer);
+      });
+      mime='application/pdf';
+    } else {
+      // Imatge: normalitzar (redimensionar, convertir HEIC→JPEG, etc.)
+      try{
+        const norm=await normalitzarImatge(fitxer);
+        base64=norm.base64;mime=norm.mime;
+      }catch(e){
+        // Si falla la normalització, intentar enviar tal qual
+        base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=ev=>res(ev.target.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(fitxer)});
+        mime=fitxer.type||'image/jpeg';
+        if(!['image/jpeg','image/png','image/webp'].includes(mime))mime='image/jpeg';
+      }
     }
 
-    const esPDF=mime==='application/pdf';
-
-    const promptCompra=`Analitza aquesta factura de proveïdor${esPDF?' (PDF)':''}. Retorna NOMÉS un JSON mínim i compacte, sense text addicional ni markdown. Màxim 8 productes:
+    const promptCompra=`Analitza aquesta factura de proveidor de restaurant. Retorna NOMES un objecte JSON sense cap text addicional ni markdown:
 {"tipus":"compra","proveidorNom":"","dataFactura":"DD/MM/YYYY","numeroFactura":null,"baseImposable":0.00,"iva":0.00,"total":0.00,"productes":[{"nom":"","categoria":"Carnisseria","quantitat":0,"unitat":"kg","preuUnitari":0.00,"total":0.00}]}
-Categories vàlides: Carnisseria/Peix i marisc/Fruites i verdures/Begudes/Làctics i ous/Pa i pastisseria/Altres. Camps desconeguts=null, preus=decimal.`;
+Categories: Carnisseria / Peix i marisc / Fruites i verdures / Begudes / Lactics i ous / Pa i pastisseria / Altres
+Normes: camps desconeguts=null, preus en decimal amb punt (no coma), quantitats en numeros.`;
 
-    const promptVenda=`Analitza aquest tiquet TPV${esPDF?' (PDF)':''}. Retorna NOMÉS aquest JSON sense text addicional ni markdown:
+    const promptVenda=`Analitza aquest tiquet de caixa TPV de restaurant. Retorna NOMES un objecte JSON sense cap text addicional ni markdown:
 {"tipus":"venda","data":"DD/MM/YYYY","totalVendes":0.00,"totalEfectiu":0.00,"totalTarja":0.00,"numTickets":0}
-Camps desconeguts=null, preus=decimal.`;
+Normes: camps desconeguts=null, preus en decimal amb punt (no coma).`;
 
     const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
-
-    // Construir la part del fitxer segons el tipus
-    const partFitxer = esPDF
-      ? {inline_data:{mime_type:'application/pdf',data:base64}}
-      : {inline_data:{mime_type:mime,data:base64}};
-
     const resp=await fetch(url,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         contents:[{parts:[
-          partFitxer,
+          {inline_data:{mime_type:mime,data:base64}},
           {text:tipusDoc==='compra'?promptCompra:promptVenda}
         ]}],
-        generationConfig:{temperature:0.0,maxOutputTokens:2000}
+        generationConfig:{temperature:0.0,maxOutputTokens:2048}
       })
     });
 
@@ -597,34 +630,38 @@ Camps desconeguts=null, preus=decimal.`;
 
     if(!resp.ok){
       const err=await resp.json().catch(()=>({}));
+      const msg=err.error?.message||'';
       if(resp.status===400||resp.status===403)throw new Error('KEY_ERROR');
       if(resp.status===429)throw new Error('LIMIT_ERROR');
-      throw new Error('API_ERROR '+(err.error?.message||resp.status));
+      if(msg.includes('high demand')||msg.includes('overloaded'))throw new Error('DEMAND_ERROR');
+      throw new Error('ERR_'+resp.status+': '+msg.substring(0,80));
     }
 
     const data=await resp.json();
-    let txt=(data.candidates?.[0]?.content?.parts?.[0]?.text||'');
+    // Agafar tot el text de la resposta
+    let txt=(data.candidates||[]).flatMap(c=>(c.content?.parts||[]).map(p=>p.text||'')).join('');
     txt=txt.replace(/```json|```/g,'').trim();
-    const inici=txt.indexOf('{');
-    const fi=txt.lastIndexOf('}');
-    if(inici===-1||fi===-1)throw new Error('EMPTY');
-    txt=txt.substring(inici,fi+1);
 
+    // Extreure el JSON entre { i }
+    const ini=txt.indexOf('{'),fi2=txt.lastIndexOf('}');
+    if(ini===-1||fi2===-1)throw new Error('EMPTY');
+    txt=txt.substring(ini,fi2+1);
+
+    // Normalitzar comes decimals a punts (per si Gemini retorna "12,50" en lloc de "12.50")
+    txt=txt.replace(/:(\s*-?\d+),(\d{2})/g,(m,a,b)=>':'+a+'.'+b);
+
+    // Parsejar, amb reparació per si és truncat
     let parsed;
-    try{
-      parsed=JSON.parse(txt);
-    }catch(e){
-      // Reparar JSON truncat
-      let reparat=txt;
-      reparat=reparat.replace(/,\s*\{[^}]*$/,'');
-      const obA=(reparat.match(/\[/g)||[]).length-(reparat.match(/\]/g)||[]).length;
-      const obO=(reparat.match(/\{/g)||[]).length-(reparat.match(/\}/g)||[]).length;
-      for(let i=0;i<obA;i++)reparat+=']';
-      for(let i=0;i<obO;i++)reparat+='}';
-      parsed=JSON.parse(reparat);
+    try{parsed=JSON.parse(txt)}
+    catch(e){
+      let rep=txt.replace(/,\s*\{[^}]*$/,'');
+      const nA=(rep.match(/\[/g)||[]).length-(rep.match(/\]/g)||[]).length;
+      const nO=(rep.match(/\{/g)||[]).length-(rep.match(/\}/g)||[]).length;
+      for(let i=0;i<nA;i++)rep+=']';
+      for(let i=0;i<nO;i++)rep+='}';
+      parsed=JSON.parse(rep);
     }
     dExtretes=parsed;
-
     document.getElementById('ai-box').style.display='none';
     mostrarResultat(dExtretes);
 
@@ -634,12 +671,13 @@ Camps desconeguts=null, preus=decimal.`;
     document.getElementById('uz').style.display='block';
     document.getElementById('scan-btns').style.display='flex';
     const msgs={
-      KEY_ERROR:'La clau API no és vàlida. Ves a Configuració i comprova-la.',
-      LIMIT_ERROR:'Límit diari assolit. Torna a provar demà (és gratuït).',
-      EMPTY:'La IA no ha retornat dades. Prova amb una foto o fitxer més clar.',
+      'KEY_ERROR':'La clau API no es valida. Ves a Configuracio i comprova-la.',
+      'LIMIT_ERROR':'Has arribat al limit gratuit del dia. Torna a provar dema.',
+      'DEMAND_ERROR':'El servidor de Google esta saturat ara mateix. Espera 1 minut i torna a provar.',
+      'EMPTY':'La IA no ha pogut llegir res. Prova amb foto mes clara o millor il·luminada.',
     };
-    const m=Object.keys(msgs).find(k=>err.message.startsWith(k));
-    mostrarErr(msgs[m]||('Error: '+err.message));
+    const clau=Object.keys(msgs).find(k=>err.message.startsWith(k));
+    mostrarErr(msgs[clau]||(err.message.length>5?err.message:'Error inesperat. Torna-ho a provar.'));
   }
 }
 
