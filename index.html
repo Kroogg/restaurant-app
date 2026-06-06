@@ -545,13 +545,13 @@ async function processarFitxer(fitxer){
     });
     const mime=fitxer.type||'image/jpeg';
 
-    const promptCompra=`Analitza aquesta factura de proveïdor i retorna ÚNICAMENT un objecte JSON vàlid, sense cap text abans ni després, sense markdown:
-{"tipus":"compra","proveidorNom":"string","dataFactura":"DD/MM/YYYY","numeroFactura":null,"baseImposable":0.00,"iva":0.00,"total":0.00,"productes":[{"nom":"string","categoria":"Carnisseria|Peix i marisc|Fruites i verdures|Begudes|Làctics i ous|Pa i pastisseria|Altres","quantitat":0,"unitat":"kg|L|u|cx","preuUnitari":0.00,"total":0.00}]}
-Camps que no puguis llegir: null. Preus com a números decimals.`;
+    const promptCompra=`Analitza aquesta factura de proveïdor. Retorna NOMÉS un JSON mínim i compacte, sense text addicional ni markdown. Usa noms curts. Màxim 5 productes:
+{"tipus":"compra","proveidorNom":"","dataFactura":"DD/MM/YYYY","numeroFactura":null,"baseImposable":0.00,"iva":0.00,"total":0.00,"productes":[{"nom":"","categoria":"Carnisseria","quantitat":0,"unitat":"kg","preuUnitari":0.00,"total":0.00}]}
+Regles: camps desconeguts=null, preus=decimal sense símbols, categories vàlides: Carnisseria/Peix i marisc/Fruites i verdures/Begudes/Làctics i ous/Pa i pastisseria/Altres`;
 
-    const promptVenda=`Analitza aquest tiquet de caixa TPV i retorna ÚNICAMENT un objecte JSON vàlid, sense cap text abans ni després, sense markdown:
+    const promptVenda=`Analitza aquest tiquet TPV. Retorna NOMÉS aquest JSON sense text addicional ni markdown:
 {"tipus":"venda","data":"DD/MM/YYYY","totalVendes":0.00,"totalEfectiu":0.00,"totalTarja":0.00,"numTickets":0}
-Camps que no puguis llegir: null. Preus com a números decimals.`;
+Camps desconeguts=null, preus=decimal sense símbols.`;
 
     const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
     const resp=await fetch(url,{
@@ -562,7 +562,7 @@ Camps que no puguis llegir: null. Preus com a números decimals.`;
           {inline_data:{mime_type:mime,data:base64}},
           {text:tipusDoc==='compra'?promptCompra:promptVenda}
         ]}],
-        generationConfig:{temperature:0.1,maxOutputTokens:1500}
+        generationConfig:{temperature:0.0,maxOutputTokens:2000}
       })
     });
 
@@ -576,9 +576,30 @@ Camps que no puguis llegir: null. Preus com a números decimals.`;
     }
 
     const data=await resp.json();
-    const txt=(data.candidates?.[0]?.content?.parts?.[0]?.text||'').replace(/```json|```/g,'').trim();
-    if(!txt)throw new Error('EMPTY');
-    dExtretes=JSON.parse(txt);
+    let txt=(data.candidates?.[0]?.content?.parts?.[0]?.text||'');
+    // Netejar markdown i espais
+    txt=txt.replace(/```json|```/g,'').trim();
+    // Extreure el primer objecte JSON vàlid
+    const inici=txt.indexOf('{');
+    const fi=txt.lastIndexOf('}');
+    if(inici===-1||fi===-1)throw new Error('EMPTY');
+    txt=txt.substring(inici,fi+1);
+    // Intentar parsejar, si falla intentar reparar JSON truncat
+    let parsed;
+    try{
+      parsed=JSON.parse(txt);
+    }catch(e){
+      // Intentar reparar tancant arrays/objectes oberts
+      let reparat=txt;
+      const obA=(reparat.match(/\[/g)||[]).length-(reparat.match(/\]/g)||[]).length;
+      const obO=(reparat.match(/\{/g)||[]).length-(reparat.match(/\}/g)||[]).length;
+      // Eliminar últim element incomplet (pot estar tallat)
+      reparat=reparat.replace(/,\s*\{[^}]*$/,'');
+      for(let i=0;i<obA;i++)reparat+=']';
+      for(let i=0;i<obO;i++)reparat+='}';
+      parsed=JSON.parse(reparat);
+    }
+    dExtretes=parsed;
 
     document.getElementById('ai-box').style.display='none';
     mostrarResultat(dExtretes);
