@@ -622,16 +622,28 @@ async function processarFitxer(fitxer){
       }
     }
 
-    const promptCompra=`Analitza aquesta factura de proveidor de restaurant. Retorna NOMES un objecte JSON sense cap text addicional ni markdown:
-{"tipus":"compra","proveidorNom":"","dataFactura":"DD/MM/YYYY","numeroFactura":null,"baseImposable":0.00,"iva":0.00,"total":0.00,"productes":[{"nom":"","categoria":"Carnisseria","quantitat":0,"unitat":"kg","preuUnitari":0.00,"total":0.00}]}
-Categories: Carnisseria / Peix i marisc / Fruites i verdures / Begudes / Lactics i ous / Pa i pastisseria / Altres
-Normes: camps desconeguts=null, preus en decimal amb punt (no coma), quantitats en numeros.`;
+    const promptCompra=`Ets un assistent que extreu dades de factures de restaurant.
+Mira la imatge i extreu tota la informació que puguis veure.
+Respon ÚNICAMENT amb un objecte JSON vàlid, sense cap text abans ni després, sense markdown, sense explicacions.
+Si no pots llegir algun camp, posa null. No deixis el JSON buit mai.
 
-    const promptVenda=`Analitza aquest tiquet de caixa TPV de restaurant. Retorna NOMES un objecte JSON sense cap text addicional ni markdown:
+Format exacte a retornar:
+{"tipus":"compra","proveidorNom":"nom del proveïdor o empresa","dataFactura":"DD/MM/YYYY","numeroFactura":null,"baseImposable":0.00,"iva":0.00,"total":0.00,"productes":[{"nom":"nom producte","categoria":"Carnisseria","quantitat":1,"unitat":"kg","preuUnitari":0.00,"total":0.00}]}
+
+Categories possibles: Carnisseria / Peix i marisc / Fruites i verdures / Begudes / Lactics i ous / Pa i pastisseria / Altres
+Els preus han de ser números decimals amb punt (exemple: 12.50, no 12,50).`;
+
+    const promptVenda=`Ets un assistent que extreu dades de tiquets de caixa TPV de restaurant.
+Mira la imatge i extreu tota la informació que puguis veure.
+Respon ÚNICAMENT amb un objecte JSON vàlid, sense cap text abans ni després, sense markdown, sense explicacions.
+Si no pots llegir algun camp, posa null. No deixis el JSON buit mai.
+
+Format exacte a retornar:
 {"tipus":"venda","data":"DD/MM/YYYY","totalVendes":0.00,"totalEfectiu":0.00,"totalTarja":0.00,"numTickets":0}
-Normes: camps desconeguts=null, preus en decimal amb punt (no coma).`;
 
-    const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+Els preus han de ser números decimals amb punt (exemple: 12.50, no 12,50).`;
+
+    const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
     const resp=await fetch(url,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
