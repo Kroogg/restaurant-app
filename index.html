@@ -286,7 +286,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--tx);font-size:15px
     </div>
   </div>
 
-  <div class="stit">Intel·ligència Artificial — Google Gemini</div>
+  <div class="stit">Intel·ligència Artificial — OpenRouter</div>
   <div class="card">
     <div class="fgrp">
       <label class="flbl">Clau API d'OpenRouter (gratuïta)</label>
@@ -566,7 +566,7 @@ async function normalitzarImatge(fitxer){
 
 async function processarFitxer(fitxer){
   const key=llegirKey();
-  if(!key){mostrarErr('Configura primer la clau API de Google a Configuració. És gratuïta!');return}
+  if(!key){mostrarErr('Configura primer la clau API d\'OpenRouter a Configuració. És gratuïta!');return}
 
   document.getElementById('uz').style.display='none';
   document.getElementById('scan-btns').style.display='none';
@@ -574,7 +574,7 @@ async function processarFitxer(fitxer){
   document.getElementById('ai-box').style.display='block';
   document.getElementById('resultat').style.display='none';
 
-  const pasos=['Preparant el fitxer…','Enviant a Google Gemini…','Analitzant text i productes…','Organitzant la informació…'];
+  const pasos=['Preparant el fitxer…','Enviant a OpenRouter…','Analitzant text i productes…','Organitzant la informació…'];
   let pi=0;
   const interval=setInterval(()=>{if(pi<pasos.length)document.getElementById('ai-pas').textContent=pasos[pi++]},700);
 
@@ -711,7 +711,7 @@ Els preus han de ser números decimals amb punt (exemple: 12.50, no 12,50).`;
     const msgs={
       'KEY_ERROR':'La clau API no és vàlida. Ves a Configuració i comprova-la.',
       'LIMIT_ERROR':'Has arribat al límit gratuït del dia. Torna a provar demà.',
-      'DEMAND_ERROR':'El servidor de Google està saturat ara mateix. Espera 1 minut i torna a provar.',
+      'DEMAND_ERROR':'El servidor d\'OpenRouter està saturat ara mateix. Espera 1 minut i torna a provar.',
       'EMPTY':'La IA no ha pogut llegir res. Prova amb foto més clara o millor il·luminada.',
       'PDF_ERROR':'No s\'ha pogut llegir el PDF. Prova de fer una foto de la factura en paper.',
     };
