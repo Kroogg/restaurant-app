@@ -539,8 +539,8 @@ async function normalitzarImatge(fitxer){
     reader.onload=e=>{
       const img=new Image();
       img.onload=()=>{
-        // Màxim 1600px per al costat llarg (suficient per Gemini, menys pes)
-        const MAX=1600;
+        // Màxim 1000px: suficient per llegir text de factures, molt menys pes
+        const MAX=1000;
         let w=img.width,h=img.height;
         if(w>MAX||h>MAX){
           if(w>h){h=Math.round(h*(MAX/w));w=MAX}
@@ -552,8 +552,8 @@ async function normalitzarImatge(fitxer){
         ctx.fillStyle='#fff';
         ctx.fillRect(0,0,w,h);
         ctx.drawImage(img,0,0,w,h);
-        // Sempre exportem JPEG net
-        const dataUrl=c.toDataURL('image/jpeg',0.88);
+        // Qualitat 0.72: bon equilibri llegibilitat/pes (factures són text, no fotos artístiques)
+        const dataUrl=c.toDataURL('image/jpeg',0.72);
         res({base64:dataUrl.split(',')[1],mime:'image/jpeg'});
       };
       img.onerror=rej;
@@ -583,14 +583,35 @@ async function processarFitxer(fitxer){
     const esPDF=fitxer.type==='application/pdf';
 
     if(esPDF){
-      // PDF: enviar directament sense processar
-      base64=await new Promise((res,rej)=>{
-        const r=new FileReader();
-        r.onload=e=>res(e.target.result.split(',')[1]);
-        r.onerror=rej;
-        r.readAsDataURL(fitxer);
-      });
-      mime='application/pdf';
+      // PDF: convertir la 1a pàgina a imatge JPEG via pdf.js
+      // (Gemini no suporta bé PDFs via inline_data; imatge és molt més fiable)
+      document.getElementById('ai-pas').textContent='Convertint PDF a imatge…';
+      try{
+        // Carregar pdf.js si no està carregat
+        if(!window.pdfjsLib){
+          await new Promise((res,rej)=>{
+            const s=document.createElement('script');
+            s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            s.onload=()=>{window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';res()};
+            s.onerror=rej;
+            document.head.appendChild(s);
+          });
+        }
+        const arrayBuf=await fitxer.arrayBuffer();
+        const pdf=await window.pdfjsLib.getDocument({data:arrayBuf}).promise;
+        const page=await pdf.getPage(1);
+        // Escala 1.5 = resolució decent sense ser massa pesada
+        const vp=page.getViewport({scale:1.5});
+        const canvas=document.createElement('canvas');
+        canvas.width=vp.width;canvas.height=vp.height;
+        const ctx=canvas.getContext('2d');
+        await page.render({canvasContext:ctx,viewport:vp}).promise;
+        const dataUrl=canvas.toDataURL('image/jpeg',0.82);
+        base64=dataUrl.split(',')[1];
+        mime='image/jpeg';
+      }catch(pdfErr){
+        throw new Error('PDF_ERROR');
+      }
     } else {
       // Imatge: normalitzar (redimensionar, convertir HEIC→JPEG, etc.)
       try{
@@ -631,7 +652,8 @@ Normes: camps desconeguts=null, preus en decimal amb punt (no coma).`;
     if(!resp.ok){
       const err=await resp.json().catch(()=>({}));
       const msg=err.error?.message||'';
-      if(resp.status===400||resp.status===403)throw new Error('KEY_ERROR');
+      if(resp.status===403)throw new Error('KEY_ERROR');
+      if(resp.status===400)throw new Error('BAD_REQ: '+msg.substring(0,120));
       if(resp.status===429)throw new Error('LIMIT_ERROR');
       if(msg.includes('high demand')||msg.includes('overloaded'))throw new Error('DEMAND_ERROR');
       throw new Error('ERR_'+resp.status+': '+msg.substring(0,80));
@@ -671,10 +693,11 @@ Normes: camps desconeguts=null, preus en decimal amb punt (no coma).`;
     document.getElementById('uz').style.display='block';
     document.getElementById('scan-btns').style.display='flex';
     const msgs={
-      'KEY_ERROR':'La clau API no es valida. Ves a Configuracio i comprova-la.',
-      'LIMIT_ERROR':'Has arribat al limit gratuit del dia. Torna a provar dema.',
-      'DEMAND_ERROR':'El servidor de Google esta saturat ara mateix. Espera 1 minut i torna a provar.',
-      'EMPTY':'La IA no ha pogut llegir res. Prova amb foto mes clara o millor il·luminada.',
+      'KEY_ERROR':'La clau API no és vàlida. Ves a Configuració i comprova-la.',
+      'LIMIT_ERROR':'Has arribat al límit gratuït del dia. Torna a provar demà.',
+      'DEMAND_ERROR':'El servidor de Google està saturat ara mateix. Espera 1 minut i torna a provar.',
+      'EMPTY':'La IA no ha pogut llegir res. Prova amb foto més clara o millor il·luminada.',
+      'PDF_ERROR':'No s\'ha pogut llegir el PDF. Prova de fer una foto de la factura en paper.',
     };
     const clau=Object.keys(msgs).find(k=>err.message.startsWith(k));
     mostrarErr(msgs[clau]||(err.message.length>5?err.message:'Error inesperat. Torna-ho a provar.'));
