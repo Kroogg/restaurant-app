@@ -643,7 +643,7 @@ Format exacte a retornar:
 
 Els preus han de ser números decimals amb punt (exemple: 12.50, no 12,50).`;
 
-    const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+    const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
     const resp=await fetch(url,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -652,7 +652,7 @@ Els preus han de ser números decimals amb punt (exemple: 12.50, no 12,50).`;
           {inline_data:{mime_type:mime,data:base64}},
           {text:tipusDoc==='compra'?promptCompra:promptVenda}
         ]}],
-        generationConfig:{temperature:0.0,maxOutputTokens:2048}
+        generationConfig:{temperature:0.0,maxOutputTokens:2048,responseMimeType:'application/json'}
       })
     });
 
