@@ -289,18 +289,18 @@ body{font-family:var(--font);background:var(--bg);color:var(--tx);font-size:15px
   <div class="stit">Intel·ligència Artificial — Google Gemini</div>
   <div class="card">
     <div class="fgrp">
-      <label class="flbl">Clau API de Google (gratuïta)</label>
-      <input class="finp" type="password" id="api-key" placeholder="AIzaSy...">
+      <label class="flbl">Clau API d'OpenRouter (gratuïta)</label>
+      <input class="finp" type="password" id="api-key" placeholder="sk-or-...">
     </div>
     <div style="background:var(--gn-bg);border-radius:var(--rs);padding:13px;font-size:13px;color:var(--gn-tx);margin-bottom:12px">
       <strong>✅ 100% gratuït — sense targeta</strong><br>
-      1.500 escanejos/dia. Obté la clau a <strong>aistudio.google.com</strong>
+      Obté la clau gratuïta a <strong>openrouter.ai</strong>
     </div>
     <div style="font-size:13px;color:var(--tx2);line-height:1.7;margin-bottom:12px">
       <strong style="color:var(--tx)">Com obtenir la clau (2 min):</strong><br>
-      1. Obre <strong>aistudio.google.com</strong> al navegador<br>
-      2. Entra amb el teu compte Google<br>
-      3. Prem <strong>"Get API Key"</strong> → <strong>"Create API key"</strong><br>
+      1. Obre <strong>openrouter.ai</strong> al navegador<br>
+      2. Entra amb Google o crea un compte<br>
+      3. Ves a <strong>"Keys"</strong> → <strong>"Create Key"</strong><br>
       4. Copia la clau i enganxa-la aquí dalt
     </div>
     <button class="btn bp bfw" onclick="guardarCfg()" style="font-size:13px">
@@ -643,16 +643,23 @@ Format exacte a retornar:
 
 Els preus han de ser números decimals amb punt (exemple: 12.50, no 12,50).`;
 
-    const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+    const url='https://openrouter.ai/api/v1/chat/completions';
     const resp=await fetch(url,{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':'Bearer '+key,
+        'HTTP-Referer':'https://kroogg.github.io',
+        'X-Title':'RestaurantPro'
+      },
       body:JSON.stringify({
-        contents:[{parts:[
-          {inline_data:{mime_type:mime,data:base64}},
-          {text:tipusDoc==='compra'?promptCompra:promptVenda}
+        model:'google/gemini-2.0-flash-exp:free',
+        messages:[{role:'user',content:[
+          {type:'image_url',image_url:{url:'data:'+mime+';base64,'+base64}},
+          {type:'text',text:tipusDoc==='compra'?promptCompra:promptVenda}
         ]}],
-        generationConfig:{temperature:0.0,maxOutputTokens:2048,responseMimeType:'application/json'}
+        max_tokens:2048,
+        temperature:0
       })
     });
 
@@ -669,8 +676,8 @@ Els preus han de ser números decimals amb punt (exemple: 12.50, no 12,50).`;
     }
 
     const data=await resp.json();
-    // Agafar tot el text de la resposta
-    let txt=(data.candidates||[]).flatMap(c=>(c.content?.parts||[]).map(p=>p.text||'')).join('');
+    // OpenRouter retorna format compatible amb OpenAI
+    let txt=(data.choices||[]).map(c=>c.message?.content||'').join('');
     txt=txt.replace(/```json|```/g,'').trim();
 
     // Extreure el JSON entre { i }
@@ -678,7 +685,7 @@ Els preus han de ser números decimals amb punt (exemple: 12.50, no 12,50).`;
     if(ini===-1||fi2===-1)throw new Error('EMPTY');
     txt=txt.substring(ini,fi2+1);
 
-    // Normalitzar comes decimals a punts (per si Gemini retorna "12,50" en lloc de "12.50")
+    // Normalitzar comes decimals a punts
     txt=txt.replace(/:(\s*-?\d+),(\d{2})/g,(m,a,b)=>':'+a+'.'+b);
 
     // Parsejar, amb reparació per si és truncat
