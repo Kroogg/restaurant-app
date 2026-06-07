@@ -552,7 +552,7 @@ async function normalitzarImatge(fitxer){
         ctx.fillStyle='#fff';
         ctx.fillRect(0,0,w,h);
         ctx.drawImage(img,0,0,w,h);
-        // Qualitat 0.72: bon equilibri llegibilitat/pes (factures són text, no fotos artístiques)
+        // Qualitat 0.72: bon equilibri llegibilitat/pes
         const dataUrl=c.toDataURL('image/jpeg',0.72);
         res({base64:dataUrl.split(',')[1],mime:'image/jpeg'});
       };
@@ -584,10 +584,8 @@ async function processarFitxer(fitxer){
 
     if(esPDF){
       // PDF: convertir la 1a pàgina a imatge JPEG via pdf.js
-      // (Gemini no suporta bé PDFs via inline_data; imatge és molt més fiable)
       document.getElementById('ai-pas').textContent='Convertint PDF a imatge…';
       try{
-        // Carregar pdf.js si no està carregat
         if(!window.pdfjsLib){
           await new Promise((res,rej)=>{
             const s=document.createElement('script');
@@ -600,7 +598,6 @@ async function processarFitxer(fitxer){
         const arrayBuf=await fitxer.arrayBuffer();
         const pdf=await window.pdfjsLib.getDocument({data:arrayBuf}).promise;
         const page=await pdf.getPage(1);
-        // Escala 1.5 = resolució decent sense ser massa pesada
         const vp=page.getViewport({scale:1.5});
         const canvas=document.createElement('canvas');
         canvas.width=vp.width;canvas.height=vp.height;
@@ -634,7 +631,7 @@ Normes: camps desconeguts=null, preus en decimal amb punt (no coma), quantitats 
 {"tipus":"venda","data":"DD/MM/YYYY","totalVendes":0.00,"totalEfectiu":0.00,"totalTarja":0.00,"numTickets":0}
 Normes: camps desconeguts=null, preus en decimal amb punt (no coma).`;
 
-    const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`;
+    const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
     const resp=await fetch(url,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
